@@ -1,15 +1,12 @@
 # Data-Driven Models for Predicting Intrinsically Disordered Protein Polymer Physics Directly from Composition or Sequence
 <br>
-<br>
 
 ## Dataset
 All calculated radius of gyration(Rg) is collected in the file Rg_data.npy.
 <br>
-<br>
 
 ## Python and package version
 The classical regression model is built using scikit-learn 0.24.2 and the artificial neural network is built using tensorflow 2.6.2. The python version is 3.6
-<br>
 <br>
 
 ## File description
