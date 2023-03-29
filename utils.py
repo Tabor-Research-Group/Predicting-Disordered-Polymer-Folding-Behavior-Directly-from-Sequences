@@ -1,4 +1,18 @@
 import numpy as np
+from numpy import sqrt
+import random
+from collections import Counter
+import tensorflow as tf
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Dense
+from tensorflow.keras.layers import Dropout
+from tensorflow.keras.callbacks import EarlyStopping
+from sklearn.preprocessing import MinMaxScaler
+from sklearn.svm import SVR
+from sklearn.gaussian_process import GaussianProcessRegressor
+from sklearn.gaussian_process.kernels import RBF
+from sklearn.kernel_ridge import KernelRidge
+from sklearn.linear_model import Ridge
 
 def coeff_determination(y_true, y_pred):
     SS_res =  sum((y_true-y_pred)**2)
@@ -44,17 +58,17 @@ def get_AA_ratio(seq):
     AA_list = ["A","C","D","E","F","G","H","I","K","L","M","N","P","Q","R","S","T","V","W","Y"]
     return AA_list, Count
 
-def get_CL_OHE(seqs_nonbi):
+def get_CL_from_OE(OE):
     CL = []
-    for i in range(len(seqs_nonbi)):
-        CL.append(count_nonzero(seqs_nonbi[i]))
+    for i in range(len(OE)):
+        CL.append(count_nonzero(OE[i]))
         c = Counter(CL)
     return c,CL
 
-def get_CL_OHA(seqs):
+def get_CL_from_CE(CE):
     CL = []
-    for i in range(len(seqs)):
-        CL.append(sum(seqs[i]))
+    for i in range(len(CE)):
+        CL.append(sum(CE[i]))
         c = Counter(CL)
     return c,CL
 
@@ -128,7 +142,7 @@ CM_idx = {
     4:[-1.,5.92,0.459],
     5:[0.,6.36,1.000],
     6:[0.,4.50,0.649],
-    7:[0..5,6.08,0.973],
+    7:[0.5,6.08,0.973],
     8:[0.,6.18,0.973],
     9:[1.,6.36,0.514],
     10:[0.,6.18,0.973],
@@ -152,7 +166,7 @@ def format_seq(seq):
     return int_seq
 
 
-def seqeuences_to_ordinal_encoding(seqs):
+def seqs_to_ordinal_encoding(seqs):
     maxlen = 0
     for s in seqs:
         if len(s) > maxlen:
@@ -166,7 +180,7 @@ def seqeuences_to_ordinal_encoding(seqs):
     return formatted
 
 def seqs_to_onehot(seqs):
-    seqs = format_batch_seqs(seqs)
+    seqs = seqs_to_ordinal_encoding(seqs)
     X = np.zeros((seqs.shape[0], seqs.shape[1]*21), dtype=int)
     for i in range(seqs.shape[1]):
         for j in range(21):
@@ -212,34 +226,54 @@ def Count_AA(seq):
     Count = np.array(Count)
     return Count
 
-def seqs_to_bag_of_AAs(seqs):
-    seq_nonbi = seqeuences_to_ordinal_encoding(seqs)
+def seqs_to_bag_of_AAs(seqs, beta=-0.5):
+    seq_nonbi = seqs_to_ordinal_encoding(seqs)
     All_BA = []
-    for i in range(seq_nonbi.shape[0]):
-        BA = np.zeros((20,20))
-        Indices = np.arange(0,seq_nonbi.shape[1],1)
-        for j in range(seq_nonbi.shape[1]):
-            Indices = np.delete(Indices,0)
-            for k in Indices:
-                AA_I = seq_nonbi[i][j]-1
-                AA_J = seq_nonbi[i][k]-1
-                if AA_I < 0 or AA_J < 0:
-                    continue
-                elif abs(k-j)==1:
-                    continue
-                else:
-                    BA[AA_I][AA_J] = BA[AA_I][AA_J]+1/sqrt(abs(k-j))
-        BA = BA.flatten()
-        All_BA.append(BA)
-    return All_BA
+    if beta <= 0:
+        for i in range(seq_nonbi.shape[0]):
+            BA = np.zeros((20,20))
+            Indices = np.arange(0,seq_nonbi.shape[1],1)
+            for j in range(seq_nonbi.shape[1]):
+                Indices = np.delete(Indices,0)
+                for k in Indices:
+                    AA_I = seq_nonbi[i][j]-1
+                    AA_J = seq_nonbi[i][k]-1
+                    if AA_I < 0 or AA_J < 0:
+                        continue
+                    elif abs(k-j)==1:
+                        continue
+                    else:
+                        BA[AA_I][AA_J] = BA[AA_I][AA_J]+1/abs(k-j)**abs(beta)
+            BA = BA.flatten()
+            All_BA.append(BA)
+    else:
+        for i in range(seq_nonbi.shape[0]):
+            BA = np.zeros((20,20))
+            Indices = np.arange(0,seq_nonbi.shape[1],1)
+            for j in range(seq_nonbi.shape[1]):
+                Indices = np.delete(Indices,0)
+                for k in Indices:
+                    AA_I = seq_nonbi[i][j]-1
+                    AA_J = seq_nonbi[i][k]-1
+                    if AA_I < 0 or AA_J < 0:
+                        continue
+                    elif abs(k-j)==1:
+                        continue
+                    else:
+                        BA[AA_I][AA_J] = BA[AA_I][AA_J]+abs(k-j)**beta
+            BA = BA.flatten()
+            All_BA.append(BA)
+    return np.array(All_BA)
 
 def seqs_to_color_mapping(seqs):
-    OE = seqeuences_to_ordinal_encoding(seqs)
-    CM = np.zeros(OE.shape)
-    for i in range(CM.shape[0]):
-        for j in range(CM.shape[1]):
-            CM[i][j] = CM_idx[OE[i][j]]
-    return CM
+    OE = seqs_to_ordinal_encoding(seqs)
+    CM = []
+    for i in range(OE.shape[0]):
+        tmp = []
+        for j in range(OE.shape[1]):
+            tmp.append(CM_idx[OE[i][j]])
+        CM.append(tmp)
+    return np.array(CM)
 
 def create_DNN(input_dim, output_dim, n_hidden_nodes, n_hidden_layers):
     
@@ -302,9 +336,9 @@ def train_DNN(X_train, X_val, X_test, Y_train, Y_val, Y_test, n_hidden_nodes,
     return DNN, train_loss, val_loss
 
 
-def Hyperparameters_Tuning(model, X, Y, Train_indices, Test_indices, fold, split):
+def Hyperparameters_Tuning(model, X, Y, Train_indices, Test_indices, fold, Parameter_list, Train_Rg = True):
     if model == "LRR":
-        A_range = [x/200 for x in range(1,200,1)]
+        A_range = Parameter_list
         best_mean_score = 0
         best_alpha = 0
         for alpha in A_range:
@@ -344,10 +378,14 @@ def Hyperparameters_Tuning(model, X, Y, Train_indices, Test_indices, fold, split
                 scaler.fit(X_train_unscaled)
                 X_train = scaler.transform(X_train_unscaled)
                 X_val = scaler.transform(X_val_unscaled)
-
+                
                 clf_rg = Ridge(alpha=alpha)
-                clf_rg.fit(X_train, Y_train_rg_unscaled)
-                score.append(clf_rg.score(X_val,Y_val_rg_unscaled))
+                if Train_Rg:
+                    clf_rg.fit(X_train, Y_train_rg_unscaled)
+                    score.append(clf_rg.score(X_val,Y_val_rg_unscaled))
+                else:
+                    clf_rg.fit(X_train, Y_train_nu_unscaled)
+                    score.append(clf_rg.score(X_val,Y_val_nu_unscaled))
             mean_score = sum(score)/(fold+1)
             print('alpha:',alpha,' score:',mean_score)
             if mean_score > best_mean_score:
@@ -357,9 +395,12 @@ def Hyperparameters_Tuning(model, X, Y, Train_indices, Test_indices, fold, split
         print('best_alpha',best_alpha,' best_mean_score',best_mean_score)
         return best_alpha
     elif model == "SVR":
-        C_range = [1,10,100,1000]
-        G_range = [0.001,0.01,0.1,1]
-        E_range = [0.0001,0.001,0.01]
+        try:
+            C_range = Parameter_list[0]
+            G_range = Parameter_list[1]
+            E_range = Parameter_list[2]
+        except:
+            print('You should give three sublists of parameters in SVR')
         best_mean_score = 0
         best_alpha = 0
         for C in C_range:
@@ -396,10 +437,14 @@ def Hyperparameters_Tuning(model, X, Y, Train_indices, Test_indices, fold, split
                         scaler.fit(X_train_unscaled)
                         X_train = scaler.transform(X_train_unscaled)
                         X_val = scaler.transform(X_val_unscaled)
-
                         svr_rbf = SVR(kernel="rbf", C = C, gamma = gamma, epsilon = eps)
-                        svr_rbf.fit(X_train, Y_train_rg_unscaled)
-                        score.append(svr_rbf.score(X_val,Y_val_rg_unscaled))
+                        
+                        if Train_Rg:
+                            svr_rbf.fit(X_train, Y_train_rg_unscaled)
+                            score.append(svr_rbf.score(X_val,Y_val_rg_unscaled))
+                        else:
+                            svr_rbf.fit(X_train, Y_train_nu_unscaled)
+                            score.append(svr_rbf.score(X_val,Y_val_nu_unscaled))
                     mean_score = sum(score)/(fold+1)
                     print('C:',C,'Gamma:',gamma,'eps:',eps,' score:',mean_score)
                     if mean_score > best_mean_score:
@@ -412,8 +457,11 @@ def Hyperparameters_Tuning(model, X, Y, Train_indices, Test_indices, fold, split
         return best_C, best_gamma, best_epsilon
     
     elif model == "KRR":
-        A_range = [1e-4,1e-3,1e-2,1e-1,1,1e1,1e2,1e3,1e4]
-        G_range = [1e-4,1e-3,1e-2,1e-1,1,1e1,1e2,1e3,1e4]
+        try:
+            A_range = Parameter_list[0]
+            G_range = Parameter_list[1]
+        except:
+            print('You should give two sublists of parameters in KRR')
         best_mean_score = 0
         best_alpha = 0
         for alpha in A_range:
@@ -451,8 +499,13 @@ def Hyperparameters_Tuning(model, X, Y, Train_indices, Test_indices, fold, split
                     X_val = scaler.transform(X_val_unscaled)
 
                     krr = KernelRidge(kernel='rbf',alpha=alpha,gamma=gamma)
-                    krr.fit(X_train, Y_train_rg_unscaled)
-                    score.append(krr.score(X_val,Y_val_rg_unscaled))
+                    if Train_Rg:
+                        krr.fit(X_train, Y_train_rg_unscaled)
+                        score.append(krr.score(X_val,Y_val_rg_unscaled))
+                    else:
+                        krr.fit(X_train, Y_train_nu_unscaled)
+                        score.append(krr.score(X_val,Y_val_nu_unscaled))
+                        
                 mean_score = sum(score)/(fold+1)
                 print('alpha:',alpha,'gamma:',gamma,' score:',mean_score)
                 if mean_score > best_mean_score:
@@ -464,7 +517,7 @@ def Hyperparameters_Tuning(model, X, Y, Train_indices, Test_indices, fold, split
         return best_alpha, best_gamma
 
     elif model == "GPR":
-        A_range = [5,6,7,8,9,10,11,12,13,14,15]
+        A_range = Parameter_list
         L = 1e5
         best_mean_score = 0
         best_alpha = 0
@@ -508,8 +561,12 @@ def Hyperparameters_Tuning(model, X, Y, Train_indices, Test_indices, fold, split
                 X_val = scaler.transform(X_val_unscaled)
                 kernel = RBF(length_scale=L,length_scale_bounds=(1e-30, 1e30))
                 gpr = GaussianProcessRegressor(kernel = kernel,random_state = 0,alpha = alpha)
-                gpr.fit(X_train, Y_train_rg_unscaled)
-                score.append(gpr.score(X_val,Y_val_rg_unscaled))
+                if Train_Rg:
+                    gpr.fit(X_train, Y_train_rg_unscaled)
+                    score.append(gpr.score(X_val,Y_val_rg_unscaled))
+                else:
+                    gpr.fit(X_train, Y_train_nu_unscaled)
+                    score.append(gpr.score(X_val,Y_val_nu_unscaled))
             mean_score = sum(score)/(fold+1)
             print('length',L,'alpha:',alpha,' score:',mean_score)
             if mean_score > best_mean_score:
@@ -520,7 +577,7 @@ def Hyperparameters_Tuning(model, X, Y, Train_indices, Test_indices, fold, split
         print('best_length:',best_length,' best_alpha:',best_alpha,' best_mean_score:',best_mean_score)
         return best_alpha, best_length
     
-def Learning_curve(model, X, Y, fold, split):
+def Learning_curve(model, X, Y, Train_indices, Test_indices, fold, split, Train_Rg = True):
     Total_train_score = []
     Total_val_score = []
     Total_train_loss = []
@@ -568,19 +625,30 @@ def Learning_curve(model, X, Y, fold, split):
 
             Y_train_rg_unscaled = Y_train_unscaled[:,0]
             Y_val_rg_unscaled = Y_val_unscaled[:,0]
+            
+            Y_train_nu_unscaled = Y_train_unscaled[:,1]
+            Y_val_nu_unscaled = Y_val_unscaled[:,1]
 
             scaler = MinMaxScaler()
             scaler.fit(X_train_unscaled)
             X_train = scaler.transform(X_train_unscaled)
             X_val = scaler.transform(X_val_unscaled)
-
-            model.fit(X_train, Y_train_rg_unscaled)
-            Y_train_pred = model.predict(X_train)
-            Y_val_pred = model.predict(X_val)
-            train_loss.append(MSE(Y_train_rg_unscaled, Y_train_pred))
-            val_loss.append(MSE(Y_val_rg_unscaled, Y_val_pred))
-            train_score.append(model.score(X_train,Y_train_rg_unscaled))
-            val_score.append(model.score(X_val,Y_val_rg_unscaled))
+            if Train_Rg:
+                model.fit(X_train, Y_train_rg_unscaled)
+                Y_train_pred = model.predict(X_train)
+                Y_val_pred = model.predict(X_val)
+                train_loss.append(MSE(Y_train_rg_unscaled, Y_train_pred))
+                val_loss.append(MSE(Y_val_rg_unscaled, Y_val_pred))
+                train_score.append(model.score(X_train,Y_train_rg_unscaled))
+#                 val_score.append(model.score(X_val,Y_val_rg_unscaled))
+            else:
+                model.fit(X_train, Y_train_nu_unscaled)
+                Y_train_pred = model.predict(X_train)
+                Y_val_pred = model.predict(X_val)
+                train_loss.append(MSE(Y_train_nu_unscaled, Y_train_pred))
+                val_loss.append(MSE(Y_val_nu_unscaled, Y_val_pred))
+                train_score.append(model.score(X_train,Y_train_nu_unscaled))
+                val_score.append(model.score(X_val,Y_val_nu_unscaled))
             train_size.append(X_train.shape[0])
             val_size.append(X_val.shape[0])
         Total_train_loss.append(train_loss)
@@ -590,3 +658,244 @@ def Learning_curve(model, X, Y, fold, split):
         Total_train_score.append(train_score)
         Total_val_score.append(val_score)
     return [Total_train_loss, Total_val_loss, Total_train_size, Total_val_size, Total_train_score, Total_val_score]
+
+def extrapolation_test_classical_regression(X, Y, Train_indices, Test_indices, model, forward = True):
+    CL_range = [i for i in range(30,161,10)]
+    train_size = [(x-29)*48 for x in CL_range]
+    CL_range_rev = [i for i in range(192,35,-12)]
+    train_size_rev = [(200-i)*48 for i in CL_range_rev]
+    
+    if forward:
+        
+        BA_rmse_list_CL_EX = []
+        BA_score_list_CL_EX = []
+        for i in range((160-30)//10+1):
+            tmp_train_idx = []
+            X_train_unscaled = []
+            X_test_unscaled = []
+            Y_train_unscaled = []
+            Y_test_unscaled = []
+
+            for j in range(len(Train_indices)):
+                tmp_train_idx.append(Train_indices[j][0:i*10+1])
+                
+            tmp_train_idx = np.array(tmp_train_idx).flatten()
+            
+            for j in tmp_train_idx:
+                X_train_unscaled.append(X[j])
+                Y_train_unscaled.append(Y[j])
+                
+            tmp = int((i*10+30)*1.2-30)
+            tmp_test_idx = Test_indices[12*tmp:12*(tmp+1)]
+            
+            for j in tmp_test_idx:
+                X_test_unscaled.append(X[j])
+                Y_test_unscaled.append(Y[j])
+
+            Y_train_Rg = np.array(Y_train_unscaled)[:,0]
+            Y_test_Rg = np.array(Y_test_unscaled)[:,0]
+
+            scaler = MinMaxScaler()
+            scaler.fit(X_train_unscaled)
+            X_train = scaler.transform(X_train_unscaled)
+            X_test = scaler.transform(X_test_unscaled)
+            model.fit(X_train,Y_train_Rg)
+            Y_pred_Rg = model.predict(X_test)
+            BA_rmse_list_CL_EX.append(RMSE(Y_test_Rg,Y_pred_Rg))
+            BA_score_list_CL_EX.append(model.score(X_test,Y_test_Rg))
+            
+        return [train_size,BA_rmse_list_CL_EX, BA_score_list_CL_EX]
+        
+    else:
+        
+        BA_rev_rmse_list_CL_EX = []
+        BA_rev_score_list_CL_EX = []
+        for i in range((192-29)//12+1):
+
+            tmp_train_idx = []
+
+            X_train_unscaled = []
+            X_test_unscaled = []
+            Y_train_unscaled = []
+            Y_test_unscaled = []
+
+            for j in range(len(Train_indices)):
+                tmp_train_idx.append(Train_indices[j][200-30-12*i:200-30+1])
+                
+            tmp_train_idx = np.array(tmp_train_idx).flatten()
+            
+            for j in tmp_train_idx:
+                X_train_unscaled.append(X[j])
+                Y_train_unscaled.append(Y[j])
+                
+            tmp = int((-i*12+192)/1.2-30)
+            tmp_test_idx = Test_indices[12*tmp:12*(tmp+1)]
+            
+            for j in tmp_test_idx:
+                X_test_unscaled.append(X[j])
+                Y_test_unscaled.append(Y[j])
+
+            Y_train_Rg = np.array(Y_train_unscaled)[:,0]
+            Y_test_Rg = np.array(Y_test_unscaled)[:,0]
+
+            scaler = MinMaxScaler()
+            scaler.fit(X_train_unscaled)
+            X_train = scaler.transform(X_train_unscaled)
+            X_test = scaler.transform(X_test_unscaled)
+
+            model.fit(X_train,Y_train_Rg)
+            Y_pred_Rg = model.predict(X_test)
+            BA_rev_rmse_list_CL_EX.append(RMSE(Y_test_Rg,Y_pred_Rg))
+            BA_rev_score_list_CL_EX.append(model.score(X_test,Y_test_Rg))
+            
+        return [train_size_rev, BA_rev_rmse_list_CL_EX, BA_rev_score_list_CL_EX]
+
+def extrapolation_test_DNN(X, Y, Train_indices, Test_indices, model, forward = True):
+    CL_range = [i for i in range(30,161,10)]
+    train_size = [(x-29)*48 for x in CL_range]
+    CL_range_rev = [i for i in range(192,35,-12)]
+    train_size_rev = [(200-i)*48 for i in CL_range_rev]
+    
+    if forward:
+        
+        BA_rmse_list_CL_EX_DNN = []
+        BA_score_list_CL_EX_DNN = []
+        for i in range((160-30)//10+1):
+
+            tmp_train_idx = []
+
+            X_train_unscaled = []
+            X_test_unscaled = []
+            Y_train_unscaled = []
+            Y_test_unscaled = []
+
+            for j in range(len(Train_indices)):
+                tmp_train_idx.append(Train_indices[j][0:i*10+1])
+            tmp_train_idx = np.array(tmp_train_idx).flatten()
+            for j in tmp_train_idx:
+                X_train_unscaled.append(X[j])
+                Y_train_unscaled.append(Y[j])
+            tmp = int((i*10+30)*1.2-30)
+            tmp_test_idx = Test_indices[12*tmp:12*(tmp+1)]
+            for j in tmp_test_idx:
+                X_test_unscaled.append(X[j])
+                Y_test_unscaled.append(Y[j])
+
+            Y_train_rg = np.array(Y_train_unscaled)[:,0]
+            Y_test_rg = np.array(Y_test_unscaled)[:,0]
+
+            scaler = MinMaxScaler()
+            scaler.fit(X_train_unscaled)
+            X_train = scaler.transform(X_train_unscaled)
+            X_test = scaler.transform(X_test_unscaled)
+
+            # Standard architecture choices
+            n_batch = 32
+            patience = 25
+            n_hidden_nodes = 100
+            n_hidden_layers = 2
+            n_epoch = 10**4
+            learning_rate = 0.0001 # learning rate
+            tf.random.set_seed(10)
+            es = EarlyStopping(monitor = 'val_loss', 
+                           mode = 'min', verbose = 1, 
+                           patience = patience,restore_best_weights=True) # patience for early stopping
+
+            # Choose optimizer
+            optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate)
+
+            # Find input and output dimensions
+            input_dim = np.shape(X_train)[1]
+            output_dim = 1
+
+            # Create DNN
+            DNN = create_DNN(input_dim, output_dim, n_hidden_nodes, n_hidden_layers)
+
+            # Compile DNN (and choose loss)
+            DNN.compile(optimizer=optimizer, loss='mean_squared_error')
+            # Generate a print
+            print('------------------------------------------------------------------------')
+            print(f'Training for fold {i+1} ...')
+
+            # Train DNN
+            DNN.fit(X_train, Y_train_rg, epochs=n_epoch, batch_size=n_batch, 
+                            shuffle=True, callbacks = [es], 
+                            validation_split=0.25)
+            Y_pred_rg = DNN.predict(X_test)
+            Y_pred_rg = np.squeeze(Y_pred_rg)
+            BA_rmse_list_CL_EX_DNN.append(RMSE(Y_test_rg,Y_pred_rg))
+            BA_score_list_CL_EX_DNN.append(coeff_determination(Y_test_rg,Y_pred_rg))
+            
+        return [train_size, BA_rmse_list_CL_EX_DNN, BA_score_list_CL_EX_DNN]
+        
+    else:
+        BA_rev_rmse_list_CL_EX_DNN = []
+        BA_rev_score_list_CL_EX_DNN = []
+        for i in range((160-30)//10+1):
+
+            tmp_train_idx = []
+
+            X_train_unscaled = []
+            X_test_unscaled = []
+            Y_train_unscaled = []
+            Y_test_unscaled = []
+
+            for j in range(len(Train_indices)):
+                tmp_train_idx.append(Train_indices[j][0:i*10+1])
+            tmp_train_idx = np.array(tmp_train_idx).flatten()
+            for j in tmp_train_idx:
+                X_train_unscaled.append(X[j])
+                Y_train_unscaled.append(Y[j])
+            tmp = int((i*10+30)*1.2-30)
+            tmp_test_idx = Test_indices[12*tmp:12*(tmp+1)]
+            for j in tmp_test_idx:
+                X_test_unscaled.append(X[j])
+                Y_test_unscaled.append(Y[j])
+
+            Y_train_rg = np.array(Y_train_unscaled)[:,0]
+            Y_test_rg = np.array(Y_test_unscaled)[:,0]
+
+            scaler = MinMaxScaler()
+            scaler.fit(X_train_unscaled)
+            X_train = scaler.transform(X_train_unscaled)
+            X_test = scaler.transform(X_test_unscaled)
+
+            # Standard architecture choices
+            n_batch = 32
+            patience = 25
+            n_hidden_nodes = 100
+            n_hidden_layers = 2
+            n_epoch = 10**4
+            learning_rate = 0.0001 # learning rate
+            tf.random.set_seed(10)
+            es = EarlyStopping(monitor = 'val_loss', 
+                           mode = 'min', verbose = 1, 
+                           patience = patience,restore_best_weights=True) # patience for early stopping
+
+            # Choose optimizer
+            optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate)
+
+            # Find input and output dimensions
+            input_dim = np.shape(X_train)[1]
+            output_dim = 1
+
+            # Create DNN
+            DNN = create_DNN(input_dim, output_dim, n_hidden_nodes, n_hidden_layers)
+
+            # Compile DNN (and choose loss)
+            DNN.compile(optimizer=optimizer, loss='mean_squared_error')
+            # Generate a print
+            print('------------------------------------------------------------------------')
+            print(f'Training for fold {i+1} ...')
+
+
+            # Train DNN
+            DNN.fit(X_train, Y_train_rg, epochs=n_epoch, batch_size=n_batch, 
+                            shuffle=True, callbacks = [es], 
+                            validation_split=0.25)
+            Y_pred_rg = DNN.predict(X_test)
+            Y_pred_rg = np.squeeze(Y_pred_rg)
+            BA_rev_rmse_list_CL_EX_DNN.append(RMSE(Y_test_rg,Y_pred_rg))
+            BA_rev_score_list_CL_EX_DNN.append(coeff_determination(Y_test_rg,Y_pred_rg))
+            
+        return [train_size_rev, BA_rev_rmse_list_CL_EX_DNN, BA_rev_score_list_CL_EX_DNN]
